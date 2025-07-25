@@ -1,0 +1,73 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'SQS queue for testing commit scenario'
+
+Parameters:
+  QueueName:
+    Type: String
+    Default: test-sqs-queue
+    Description: Name of the SQS queue
+
+  VisibilityTimeout:
+    Type: Number
+    Default: 30
+    Description: Visibility timeout in seconds
+    MinValue: 0
+    MaxValue: 43200
+
+Resources:
+  TestSQSQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Ref QueueName
+      VisibilityTimeoutSeconds: !Ref VisibilityTimeout
+      MessageRetentionPeriod: 1209600  # 14 days
+      MaxReceiveCount: 3
+      KmsMasterKeyId: alias/aws/sqs
+      Tags:
+        - Key: Name
+          Value: TestSQSQueue
+
+  TestDeadLetterQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub "${QueueName}-dlq"
+      MessageRetentionPeriod: 1209600  # 14 days
+      KmsMasterKeyId: alias/aws/sqs
+      Tags:
+        - Key: Name
+          Value: TestDeadLetterQueue
+
+  QueuePolicy:
+    Type: AWS::SQS::QueuePolicy
+    Properties:
+      Queues:
+        - !Ref TestSQSQueue
+      PolicyDocument:
+        Statement:
+          - Sid: AllowSendMessage
+            Effect: Allow
+            Principal:
+              AWS: !Sub "arn:aws:iam::${AWS::AccountId}:root"
+            Action:
+              - sqs:SendMessage
+              - sqs:ReceiveMessage
+            Resource: !GetAtt TestSQSQueue.Arn
+
+Outputs:
+  QueueUrl:
+    Description: URL of the SQS queue
+    Value: !Ref TestSQSQueue
+    Export:
+      Name: !Sub "${AWS::StackName}-QueueUrl"
+
+  QueueArn:
+    Description: ARN of the SQS queue
+    Value: !GetAtt TestSQSQueue.Arn
+    Export:
+      Name: !Sub "${AWS::StackName}-QueueArn"
+
+  DeadLetterQueueUrl:
+    Description: URL of the dead letter queue
+    Value: !Ref TestDeadLetterQueue
+    Export:
+      Name: !Sub "${AWS::StackName}-DeadLetterQueueUrl"

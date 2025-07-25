@@ -1,0 +1,114 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Nested CloudFormation stack for testing complex template structures'
+
+Parameters:
+  NestedStackBucketName:
+    Type: String
+    Default: nested-stack-templates-bucket
+    Description: S3 bucket containing nested stack templates
+
+Resources:
+  # Parent stack resources
+  ParentVPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: '10.1.0.0/16'
+      EnableDnsHostnames: true
+      EnableDnsSupport: true
+      Tags:
+        - Key: Name
+          Value: ParentVPC
+
+  # Nested stack for networking components
+  NetworkingStack:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: !Sub 'https://${NestedStackBucketName}.s3.amazonaws.com/networking.yaml'
+      Parameters:
+        VpcId: !Ref ParentVPC
+        VpcCidr: '10.1.0.0/16'
+      Tags:
+        - Key: Name
+          Value: NetworkingNestedStack
+        - Key: StackType
+          Value: Nested
+
+  # Nested stack for security components
+  SecurityStack:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: !Sub 'https://${NestedStackBucketName}.s3.amazonaws.com/security.yaml'
+      Parameters:
+        VpcId: !Ref ParentVPC
+      Tags:
+        - Key: Name
+          Value: SecurityNestedStack
+        - Key: StackType
+          Value: Nested
+
+  # Nested stack for application components
+  ApplicationStack:
+    Type: AWS::CloudFormation::Stack
+    DependsOn: 
+      - NetworkingStack
+      - SecurityStack
+    Properties:
+      TemplateURL: !Sub 'https://${NestedStackBucketName}.s3.amazonaws.com/application.yaml'
+      Parameters:
+        VpcId: !Ref ParentVPC
+        SubnetId: !GetAtt NetworkingStack.Outputs.PrivateSubnetId
+        SecurityGroupId: !GetAtt SecurityStack.Outputs.ApplicationSecurityGroupId
+      Tags:
+        - Key: Name
+          Value: ApplicationNestedStack
+        - Key: StackType
+          Value: Nested
+
+  # Cross-stack reference example
+  CrossStackRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${AWS::StackName}-CrossStackRole'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ec2.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/ReadOnlyAccess
+      Tags:
+        - Key: Name
+          Value: CrossStackRole
+
+Outputs:
+  ParentVpcId:
+    Description: ID of the parent VPC
+    Value: !Ref ParentVPC
+    Export:
+      Name: !Sub "${AWS::StackName}-ParentVpcId"
+
+  NetworkingStackId:
+    Description: ID of the networking nested stack
+    Value: !Ref NetworkingStack
+    Export:
+      Name: !Sub "${AWS::StackName}-NetworkingStackId"
+
+  SecurityStackId:
+    Description: ID of the security nested stack
+    Value: !Ref SecurityStack
+    Export:
+      Name: !Sub "${AWS::StackName}-SecurityStackId"
+
+  ApplicationStackId:
+    Description: ID of the application nested stack
+    Value: !Ref ApplicationStack
+    Export:
+      Name: !Sub "${AWS::StackName}-ApplicationStackId"
+
+  CrossStackRoleArn:
+    Description: ARN of the cross-stack IAM role
+    Value: !GetAtt CrossStackRole.Arn
+    Export:
+      Name: !Sub "${AWS::StackName}-CrossStackRoleArn"

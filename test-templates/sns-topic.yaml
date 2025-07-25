@@ -1,0 +1,53 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'SNS topic for testing commit scenario'
+
+Parameters:
+  TopicName:
+    Type: String
+    Default: test-sns-topic
+    Description: Name of the SNS topic
+
+Resources:
+  TestSNSTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: !Ref TopicName
+      DisplayName: Test SNS Topic
+      KmsMasterKeyId: alias/aws/sns
+      Tags:
+        - Key: Name
+          Value: TestSNSTopic
+
+  TestSNSSubscription:
+    Type: AWS::SNS::Subscription
+    Properties:
+      TopicArn: !Ref TestSNSTopic
+      Protocol: email
+      Endpoint: test@example.com
+
+  SNSTopicPolicy:
+    Type: AWS::SNS::TopicPolicy
+    Properties:
+      Topics:
+        - !Ref TestSNSTopic
+      PolicyDocument:
+        Statement:
+          - Sid: AllowPublishFromCloudWatch
+            Effect: Allow
+            Principal:
+              Service: cloudwatch.amazonaws.com
+            Action: sns:Publish
+            Resource: !Ref TestSNSTopic
+
+Outputs:
+  TopicArn:
+    Description: ARN of the SNS topic
+    Value: !Ref TestSNSTopic
+    Export:
+      Name: !Sub "${AWS::StackName}-TopicArn"
+
+  TopicName:
+    Description: Name of the SNS topic
+    Value: !GetAtt TestSNSTopic.TopicName
+    Export:
+      Name: !Sub "${AWS::StackName}-TopicName"

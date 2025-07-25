@@ -1,0 +1,132 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'RDS database for testing Yor tagging with .yml extension'
+
+Parameters:
+  DBInstanceClass:
+    Type: String
+    Default: db.t3.micro
+    Description: RDS instance class
+    AllowedValues:
+      - db.t3.micro
+      - db.t3.small
+      - db.t3.medium
+
+  DBName:
+    Type: String
+    Default: testdb
+    Description: Database name
+    MinLength: 1
+    MaxLength: 64
+    AllowedPattern: '[a-zA-Z][a-zA-Z0-9]*'
+
+  DBUsername:
+    Type: String
+    Default: admin
+    Description: Database admin username
+    MinLength: 1
+    MaxLength: 16
+    AllowedPattern: '[a-zA-Z][a-zA-Z0-9]*'
+
+  DBPassword:
+    Type: String
+    NoEcho: true
+    Description: Database admin password
+    MinLength: 8
+    MaxLength: 41
+    AllowedPattern: '[a-zA-Z0-9]*'
+    Default: testpassword123
+
+Resources:
+  DBSubnetGroup:
+    Type: AWS::RDS::DBSubnetGroup
+    Properties:
+      DBSubnetGroupDescription: Subnet group for RDS database
+      SubnetIds:
+        - subnet-12345678  # Replace with actual subnet IDs in real usage
+        - subnet-87654321
+      Tags:
+        - Key: Name
+          Value: TestDBSubnetGroup
+
+  DBSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Security group for RDS database
+      VpcId: vpc-12345678  # Replace with actual VPC ID in real usage
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 3306
+          ToPort: 3306
+          SourceSecurityGroupId: !Ref AppSecurityGroup
+      Tags:
+        - Key: Name
+          Value: DBSecurityGroup
+
+  AppSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Security group for application servers
+      VpcId: vpc-12345678  # Replace with actual VPC ID in real usage
+      Tags:
+        - Key: Name
+          Value: AppSecurityGroup
+
+  DBParameterGroup:
+    Type: AWS::RDS::DBParameterGroup
+    Properties:
+      Description: Parameter group for MySQL database
+      Family: mysql8.0
+      Parameters:
+        innodb_buffer_pool_size: '{DBInstanceClassMemory*3/4}'
+        max_connections: 100
+      Tags:
+        - Key: Name
+          Value: TestDBParameterGroup
+
+  TestDatabase:
+    Type: AWS::RDS::DBInstance
+    DeletionPolicy: Delete
+    Properties:
+      DBInstanceIdentifier: test-mysql-database
+      DBInstanceClass: !Ref DBInstanceClass
+      Engine: mysql
+      EngineVersion: '8.0.35'
+      MasterUsername: !Ref DBUsername
+      MasterUserPassword: !Ref DBPassword
+      DBName: !Ref DBName
+      AllocatedStorage: 20
+      StorageType: gp2
+      StorageEncrypted: true
+      VPCSecurityGroups:
+        - !Ref DBSecurityGroup
+      DBSubnetGroupName: !Ref DBSubnetGroup
+      DBParameterGroupName: !Ref DBParameterGroup
+      BackupRetentionPeriod: 7
+      MultiAZ: false
+      PubliclyAccessible: false
+      AutoMinorVersionUpgrade: true
+      DeletionProtection: false
+      Tags:
+        - Key: Name
+          Value: TestMySQLDatabase
+        - Key: Environment
+          Value: Test
+
+Outputs:
+  DatabaseEndpoint:
+    Description: RDS database endpoint
+    Value: !GetAtt TestDatabase.Endpoint.Address
+    Export:
+      Name: !Sub "${AWS::StackName}-DatabaseEndpoint"
+
+  DatabasePort:
+    Description: RDS database port
+    Value: !GetAtt TestDatabase.Endpoint.Port
+    Export:
+      Name: !Sub "${AWS::StackName}-DatabasePort"
+
+  DatabaseId:
+    Description: RDS database instance identifier
+    Value: !Ref TestDatabase
+    Export:
+      Name: !Sub "${AWS::StackName}-DatabaseId"

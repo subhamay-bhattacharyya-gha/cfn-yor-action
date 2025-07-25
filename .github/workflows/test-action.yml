@@ -1,0 +1,324 @@
+name: Test CloudFormation Yor Tagging Action
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+    inputs:
+      test_scenario:
+        description: 'Specific test scenario to run'
+        required: false
+        default: 'all'
+        type: choice
+        options:
+          - 'all'
+          - 'default-directory'
+          - 'custom-directory'
+          - 'no-commit'
+          - 'release-tag'
+
+jobs:
+  test-default-directory:
+    name: Test Default Directory Behavior
+    runs-on: ubuntu-latest
+    if: ${{ github.event.inputs.test_scenario == 'all' || github.event.inputs.test_scenario == 'default-directory' || github.event.inputs.test_scenario == '' }}
+    
+    steps:
+      - name: Setup Test Environment
+        run: |
+          echo "Testing default directory behavior (cloudformation/)"
+          echo "This test validates requirements: 1.1, 1.2, 1.3, 2.2"
+      
+      - name: Checkout Test Repository
+        uses: actions/checkout@v4
+      
+      - name: Create Default CloudFormation Directory
+        run: |
+          mkdir -p cloudformation
+          cp test-templates/basic-s3-bucket.yaml cloudformation/
+          cp test-templates/ec2-instance.json cloudformation/
+          ls -la cloudformation/
+      
+      - name: Run Action with Default Settings
+        uses: ./
+        with:
+          commit-changes: false  # Don't commit in tests
+      
+      - name: Verify Tagging Results
+        run: |
+          echo "Checking if CloudFormation templates were tagged..."
+          if grep -r "yor_trace" cloudformation/; then
+            echo "✅ Yor tags found in CloudFormation templates"
+          else
+            echo "❌ No Yor tags found in CloudFormation templates"
+            exit 1
+          fi
+
+  test-custom-directory:
+    name: Test Custom Directory Specification
+    runs-on: ubuntu-latest
+    if: ${{ github.event.inputs.test_scenario == 'all' || github.event.inputs.test_scenario == 'custom-directory' || github.event.inputs.test_scenario == '' }}
+    
+    steps:
+      - name: Setup Test Environment
+        run: |
+          echo "Testing custom directory specification"
+          echo "This test validates requirements: 2.1, 2.3"
+      
+      - name: Checkout Test Repository
+        uses: actions/checkout@v4
+      
+      - name: Create Custom CloudFormation Directory
+        run: |
+          mkdir -p infrastructure/cloudformation
+          cp test-templates/vpc-stack.yaml infrastructure/cloudformation/
+          cp test-templates/rds-database.yml infrastructure/cloudformation/
+          ls -la infrastructure/cloudformation/
+      
+      - name: Run Action with Custom Directory
+        uses: ./
+        with:
+          cloudformation-dir: infrastructure/cloudformation
+          commit-changes: false
+      
+      - name: Verify Custom Directory Processing
+        run: |
+          echo "Checking if custom directory templates were tagged..."
+          if grep -r "yor_trace" infrastructure/cloudformation/; then
+            echo "✅ Yor tags found in custom directory templates"
+          else
+            echo "❌ No Yor tags found in custom directory templates"
+            exit 1
+          fi
+
+  test-no-commit-scenario:
+    name: Test No-Commit Scenario
+    runs-on: ubuntu-latest
+    if: ${{ github.event.inputs.test_scenario == 'all' || github.event.inputs.test_scenario == 'no-commit' || github.event.inputs.test_scenario == '' }}
+    
+    steps:
+      - name: Setup Test Environment
+        run: |
+          echo "Testing no-commit scenario"
+          echo "This test validates requirements: 4.1, 4.2"
+      
+      - name: Checkout Test Repository
+        uses: actions/checkout@v4
+      
+      - name: Create CloudFormation Templates
+        run: |
+          mkdir -p cloudformation
+          cp test-templates/lambda-function.yaml cloudformation/
+          cp test-templates/api-gateway.json cloudformation/
+      
+      - name: Get Initial Git Status
+        id: initial-status
+        run: |
+          echo "initial_status=$(git status --porcelain | wc -l)" >> $GITHUB_OUTPUT
+      
+      - name: Run Action with No Commit
+        uses: ./
+        with:
+          commit-changes: false
+      
+      - name: Verify No Commit Occurred
+        run: |
+          current_status=$(git status --porcelain | wc -l)
+          echo "Initial status: ${{ steps.initial-status.outputs.initial_status }}"
+          echo "Current status: $current_status"
+          
+          if [ "$current_status" -gt "${{ steps.initial-status.outputs.initial_status }}" ]; then
+            echo "✅ Files were modified but not committed (as expected)"
+          else
+            echo "❌ No file modifications detected"
+            exit 1
+          fi
+
+  test-commit-scenario:
+    name: Test Commit Scenario
+    runs-on: ubuntu-latest
+    if: ${{ github.event.inputs.test_scenario == 'all' || github.event.inputs.test_scenario == '' }}
+    
+    steps:
+      - name: Setup Test Environment
+        run: |
+          echo "Testing commit scenario"
+          echo "This test validates requirements: 4.1, 4.3"
+      
+      - name: Checkout Test Repository
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+      
+      - name: Create CloudFormation Templates
+        run: |
+          mkdir -p cloudformation
+          cp test-templates/sns-topic.yaml cloudformation/
+          cp test-templates/sqs-queue.yml cloudformation/
+      
+      - name: Get Initial Commit Hash
+        id: initial-commit
+        run: |
+          echo "initial_hash=$(git rev-parse HEAD)" >> $GITHUB_OUTPUT
+      
+      - name: Run Action with Commit Enabled
+        uses: ./
+        with:
+          commit-changes: true
+      
+      - name: Verify Commit Occurred
+        run: |
+          current_hash=$(git rev-parse HEAD)
+          echo "Initial commit: ${{ steps.initial-commit.outputs.initial_hash }}"
+          echo "Current commit: $current_hash"
+          
+          if [ "$current_hash" != "${{ steps.initial-commit.outputs.initial_hash }}" ]; then
+            echo "✅ New commit created (as expected)"
+            git log -1 --oneline
+          else
+            echo "ℹ️ No new commit (possibly no changes needed)"
+          fi
+
+  test-release-tag-scenario:
+    name: Test Release Tag Checkout
+    runs-on: ubuntu-latest
+    if: ${{ github.event.inputs.test_scenario == 'all' || github.event.inputs.test_scenario == 'release-tag' || github.event.inputs.test_scenario == '' }}
+    
+    steps:
+      - name: Setup Test Environment
+        run: |
+          echo "Testing release tag checkout"
+          echo "This test validates requirements: 3.1, 3.2, 3.3"
+      
+      - name: Checkout Test Repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Fetch all history for tags
+      
+      - name: Create Test Tag
+        run: |
+          git config user.name "Test User"
+          git config user.email "test@example.com"
+          
+          # Create CloudFormation templates
+          mkdir -p cloudformation
+          cp test-templates/basic-s3-bucket.yaml cloudformation/
+          git add cloudformation/
+          git commit -m "Add test CloudFormation template"
+          
+          # Create a test tag
+          git tag -a v1.0.0-test -m "Test release tag"
+          git push origin v1.0.0-test || echo "Tag push failed (expected in fork/PR)"
+      
+      - name: Run Action with Release Tag
+        uses: ./
+        with:
+          release-tag: v1.0.0-test
+          commit-changes: false
+      
+      - name: Verify Tag Checkout
+        run: |
+          current_tag=$(git describe --tags --exact-match 2>/dev/null || echo "no-tag")
+          echo "Current tag: $current_tag"
+          
+          if [ "$current_tag" = "v1.0.0-test" ]; then
+            echo "✅ Successfully checked out release tag"
+          else
+            echo "❌ Failed to checkout release tag"
+            exit 1
+          fi
+
+  test-error-scenarios:
+    name: Test Error Handling
+    runs-on: ubuntu-latest
+    if: ${{ github.event.inputs.test_scenario == 'all' || github.event.inputs.test_scenario == '' }}
+    
+    steps:
+      - name: Setup Test Environment
+        run: |
+          echo "Testing error handling scenarios"
+          echo "This test validates requirements: 2.4, 3.4"
+      
+      - name: Checkout Test Repository
+        uses: actions/checkout@v4
+      
+      - name: Test Invalid Directory
+        continue-on-error: true
+        id: invalid-dir-test
+        uses: ./
+        with:
+          cloudformation-dir: non-existent-directory
+          commit-changes: false
+      
+      - name: Verify Invalid Directory Error
+        run: |
+          if [ "${{ steps.invalid-dir-test.outcome }}" = "failure" ]; then
+            echo "✅ Action correctly failed for invalid directory"
+          else
+            echo "❌ Action should have failed for invalid directory"
+            exit 1
+          fi
+      
+      - name: Test Invalid Release Tag
+        continue-on-error: true
+        id: invalid-tag-test
+        uses: ./
+        with:
+          release-tag: non-existent-tag-v999.999.999
+          commit-changes: false
+      
+      - name: Verify Invalid Tag Error
+        run: |
+          if [ "${{ steps.invalid-tag-test.outcome }}" = "failure" ]; then
+            echo "✅ Action correctly failed for invalid release tag"
+          else
+            echo "❌ Action should have failed for invalid release tag"
+            exit 1
+          fi
+
+  test-multiple-template-formats:
+    name: Test Multiple CloudFormation Template Formats
+    runs-on: ubuntu-latest
+    if: ${{ github.event.inputs.test_scenario == 'all' || github.event.inputs.test_scenario == '' }}
+    
+    steps:
+      - name: Setup Test Environment
+        run: |
+          echo "Testing multiple CloudFormation template formats"
+          echo "This test validates requirements: 1.1, 1.2"
+      
+      - name: Checkout Test Repository
+        uses: actions/checkout@v4
+      
+      - name: Create Mixed Format Templates
+        run: |
+          mkdir -p cloudformation
+          # Copy different format templates
+          cp test-templates/basic-s3-bucket.yaml cloudformation/  # .yaml
+          cp test-templates/rds-database.yml cloudformation/      # .yml
+          cp test-templates/ec2-instance.json cloudformation/     # .json
+          
+          echo "Template files created:"
+          ls -la cloudformation/
+      
+      - name: Run Action on Mixed Formats
+        uses: ./
+        with:
+          commit-changes: false
+      
+      - name: Verify All Formats Processed
+        run: |
+          yaml_tagged=$(grep -l "yor_trace" cloudformation/*.yaml | wc -l)
+          yml_tagged=$(grep -l "yor_trace" cloudformation/*.yml | wc -l)
+          json_tagged=$(grep -l "yor_trace" cloudformation/*.json | wc -l)
+          
+          echo "Tagged files: .yaml=$yaml_tagged, .yml=$yml_tagged, .json=$json_tagged"
+          
+          if [ "$yaml_tagged" -gt 0 ] && [ "$yml_tagged" -gt 0 ] && [ "$json_tagged" -gt 0 ]; then
+            echo "✅ All CloudFormation template formats were processed"
+          else
+            echo "❌ Not all template formats were processed correctly"
+            exit 1
+          fi

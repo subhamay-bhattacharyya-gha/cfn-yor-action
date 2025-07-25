@@ -1,0 +1,42 @@
+# This is an intentionally invalid CloudFormation template for error handling testing
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Invalid CloudFormation template for error handling tests'
+
+# Invalid syntax - missing colon after Parameters
+Parameters
+  InvalidParameter:
+    Type: String
+    Default: test-value
+
+Resources:
+  # Invalid resource type
+  InvalidResource:
+    Type: AWS::InvalidService::InvalidResource
+    Properties:
+      InvalidProperty: InvalidValue
+      # Missing required properties
+
+  # Resource with invalid property structure
+  AnotherInvalidResource:
+    Type: AWS::S3::Bucket
+    Properties:
+      # Invalid property name
+      InvalidBucketProperty: SomeValue
+      # Invalid nested structure
+      BucketName:
+        - InvalidListItem
+        - AnotherInvalidItem
+
+  # Resource with circular dependency (if used with another template)
+  CircularDependencyResource:
+    Type: AWS::EC2::SecurityGroup
+    DependsOn: NonExistentResource
+    Properties:
+      GroupDescription: This will cause issues
+
+# Invalid YAML structure
+Outputs
+  # Missing colon and invalid structure
+  InvalidOutput
+    Description: This is invalid
+    Value: !Ref NonExistentResource

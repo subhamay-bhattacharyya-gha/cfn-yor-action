@@ -1,0 +1,133 @@
+{
+  "AWSTemplateFormatVersion": "2010-09-09",
+  "Description": "Basic EC2 instance for testing Yor tagging functionality",
+  "Parameters": {
+    "InstanceType": {
+      "Type": "String",
+      "Default": "t3.micro",
+      "Description": "EC2 instance type",
+      "AllowedValues": [
+        "t3.micro",
+        "t3.small",
+        "t3.medium"
+      ]
+    },
+    "KeyPairName": {
+      "Type": "String",
+      "Description": "Name of an existing EC2 KeyPair",
+      "Default": "test-keypair"
+    }
+  },
+  "Mappings": {
+    "RegionMap": {
+      "us-east-1": {
+        "AMI": "ami-0abcdef1234567890"
+      },
+      "us-west-2": {
+        "AMI": "ami-0fedcba0987654321"
+      }
+    }
+  },
+  "Resources": {
+    "TestSecurityGroup": {
+      "Type": "AWS::EC2::SecurityGroup",
+      "Properties": {
+        "GroupDescription": "Security group for test EC2 instance",
+        "SecurityGroupIngress": [
+          {
+            "IpProtocol": "tcp",
+            "FromPort": 22,
+            "ToPort": 22,
+            "CidrIp": "0.0.0.0/0"
+          },
+          {
+            "IpProtocol": "tcp",
+            "FromPort": 80,
+            "ToPort": 80,
+            "CidrIp": "0.0.0.0/0"
+          }
+        ],
+        "Tags": [
+          {
+            "Key": "Name",
+            "Value": "TestSecurityGroup"
+          }
+        ]
+      }
+    },
+    "TestEC2Instance": {
+      "Type": "AWS::EC2::Instance",
+      "Properties": {
+        "InstanceType": {
+          "Ref": "InstanceType"
+        },
+        "ImageId": {
+          "Fn::FindInMap": [
+            "RegionMap",
+            {
+              "Ref": "AWS::Region"
+            },
+            "AMI"
+          ]
+        },
+        "KeyName": {
+          "Ref": "KeyPairName"
+        },
+        "SecurityGroupIds": [
+          {
+            "Ref": "TestSecurityGroup"
+          }
+        ],
+        "UserData": {
+          "Fn::Base64": {
+            "Fn::Join": [
+              "",
+              [
+                "#!/bin/bash\n",
+                "yum update -y\n",
+                "yum install -y httpd\n",
+                "systemctl start httpd\n",
+                "systemctl enable httpd\n",
+                "echo '<h1>Test EC2 Instance</h1>' > /var/www/html/index.html\n"
+              ]
+            ]
+          }
+        },
+        "Tags": [
+          {
+            "Key": "Name",
+            "Value": "TestEC2Instance"
+          }
+        ]
+      }
+    }
+  },
+  "Outputs": {
+    "InstanceId": {
+      "Description": "ID of the created EC2 instance",
+      "Value": {
+        "Ref": "TestEC2Instance"
+      },
+      "Export": {
+        "Name": {
+          "Fn::Sub": "${AWS::StackName}-InstanceId"
+        }
+      }
+    },
+    "PublicIP": {
+      "Description": "Public IP address of the EC2 instance",
+      "Value": {
+        "Fn::GetAtt": [
+          "TestEC2Instance",
+          "PublicIp"
+        ]
+      }
+    },
+    "SecurityGroupId": {
+      "Description": "ID of the security group",
+      "Value": {
+        "Ref": "TestSecurityGroup"
+      }
+    }
+  }
+}
