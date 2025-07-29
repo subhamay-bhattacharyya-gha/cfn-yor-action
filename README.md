@@ -42,14 +42,14 @@ name: Tag CloudFormation Templates
 on:
   push:
     branches: [ main ]
-    paths: [ 'cloudformation/**' ]
+    paths: [ 'cfn/**' ]
 
 jobs:
   tag-cloudformation:
     runs-on: ubuntu-latest
     steps:
       - name: Tag CloudFormation Templates
-        uses: subhamay-bhattacharyya-gha/cfn-yor-action@v1
+        uses: subhamay-bhattacharyya-gha/cfn-yor-action@main
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
 ```
@@ -61,16 +61,16 @@ name: Tag Infrastructure Templates
 
 on:
   pull_request:
-    paths: [ 'infrastructure/**' ]
+    paths: [ 'cfn/**' ]
 
 jobs:
   tag-templates:
     runs-on: ubuntu-latest
     steps:
       - name: Tag Infrastructure Templates
-        uses: subhamay-bhattacharyya-gha/cfn-yor-action@v1
+        uses: subhamay-bhattacharyya-gha/cfn-yor-action@main
         with:
-          cloudformation-dir: 'infrastructure/cloudformation'
+          cloudformation-dir: 'cfn'
           commit-changes: 'false'
           github-token: ${{ secrets.GITHUB_TOKEN }}
 ```
@@ -89,7 +89,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Tag CloudFormation Templates for Release
-        uses: subhamay-bhattacharyya-gha/cfn-yor-action@v1
+        uses: subhamay-bhattacharyya-gha/cfn-yor-action@main
         with:
           release-tag: ${{ github.event.release.tag_name }}
           cloudformation-dir: 'templates'
@@ -125,7 +125,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Tag CloudFormation Templates
-        uses: subhamay-bhattacharyya-gha/cfn-yor-action@v1
+        uses: subhamay-bhattacharyya-gha/cfn-yor-action@main
         with:
           cloudformation-dir: ${{ github.event.inputs.directory }}
           release-tag: ${{ github.event.inputs.tag }}
