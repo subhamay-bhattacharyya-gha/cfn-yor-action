@@ -1,0 +1,55 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Basic S3 bucket for testing Yor tagging functionality'
+
+Parameters:
+  BucketName:
+    Type: String
+    Description: Name of the S3 bucket
+    Default: test-yor-tagging-bucket
+
+Resources:
+  TestS3Bucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Ref BucketName
+      VersioningConfiguration:
+        Status: Enabled
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+
+  BucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref TestS3Bucket
+      PolicyDocument:
+        Statement:
+          - Sid: DenyInsecureConnections
+            Effect: Deny
+            Principal: "*"
+            Action: "s3:*"
+            Resource:
+              - !Sub "${TestS3Bucket}/*"
+              - !Ref TestS3Bucket
+            Condition:
+              Bool:
+                "aws:SecureTransport": "false"
+
+Outputs:
+  BucketName:
+    Description: Name of the created S3 bucket
+    Value: !Ref TestS3Bucket
+    Export:
+      Name: !Sub "${AWS::StackName}-BucketName"
+  
+  BucketArn:
+    Description: ARN of the created S3 bucket
+    Value: !GetAtt TestS3Bucket.Arn
+    Export:
+      Name: !Sub "${AWS::StackName}-BucketArn"

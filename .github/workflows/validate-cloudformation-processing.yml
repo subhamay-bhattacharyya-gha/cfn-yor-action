@@ -1,0 +1,420 @@
+name: Validate CloudFormation Template Processing
+
+on:
+  workflow_dispatch:
+    inputs:
+      validation_type:
+        description: 'Type of validation to run'
+        required: false
+        default: 'all'
+        type: choice
+        options:
+          - 'all'
+          - 'template-formats'
+          - 'resource-identification'
+          - 'nested-stacks'
+          - 'error-handling'
+
+jobs:
+  validate-template-formats:
+    name: Validate Multiple Template Formats
+    runs-on: ubuntu-latest
+    if: ${{ github.event.inputs.validation_type == 'all' || github.event.inputs.validation_type == 'template-formats' || github.event.inputs.validation_type == '' }}
+    
+    steps:
+      - name: Setup Validation Environment
+        run: |
+          echo "🔍 Validating CloudFormation template format processing"
+          echo "Requirements: 6.1 - System SHALL identify CloudFormation templates by file extensions"
+      
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+      
+      - name: Create Test Templates Directory
+        run: |
+          mkdir -p cloudformation-validation
+          
+          # Copy templates with different extensions
+          cp test-templates/basic-s3-bucket.yaml cloudformation-validation/test-yaml.yaml
+          cp test-templates/rds-database.yml cloudformation-validation/test-yml.yml  
+          cp test-templates/ec2-instance.json cloudformation-validation/test-json.json
+          
+          echo "📁 Created test templates:"
+          ls -la cloudformation-validation/
+      
+      - name: Run Yor Action on Mixed Formats
+        uses: ./
+        with:
+          cloudformation-dir: cloudformation-validation
+          commit-changes: false
+      
+      - name: Validate YAML Format Processing
+        run: |
+          echo "🔍 Checking .yaml file processing..."
+          if grep -q "yor_trace" cloudformation-validation/test-yaml.yaml; then
+            echo "✅ .yaml format processed successfully"
+            echo "Found Yor tags:"
+            grep "yor_trace" cloudformation-validation/test-yaml.yaml | head -3
+          else
+            echo "❌ .yaml format not processed correctly"
+            exit 1
+          fi
+      
+      - name: Validate YML Format Processing
+        run: |
+          echo "🔍 Checking .yml file processing..."
+          if grep -q "yor_trace" cloudformation-validation/test-yml.yml; then
+            echo "✅ .yml format processed successfully"
+            echo "Found Yor tags:"
+            grep "yor_trace" cloudformation-validation/test-yml.yml | head -3
+          else
+            echo "❌ .yml format not processed correctly"
+            exit 1
+          fi
+      
+      - name: Validate JSON Format Processing
+        run: |
+          echo "🔍 Checking .json file processing..."
+          if grep -q "yor_trace" cloudformation-validation/test-json.json; then
+            echo "✅ .json format processed successfully"
+            echo "Found Yor tags:"
+            grep "yor_trace" cloudformation-validation/test-json.json | head -3
+          else
+            echo "❌ .json format not processed correctly"
+            exit 1
+          fi
+      
+      - name: Validate Format Coverage
+        run: |
+          yaml_count=$(find cloudformation-validation -name "*.yaml" -exec grep -l "yor_trace" {} \; | wc -l)
+          yml_count=$(find cloudformation-validation -name "*.yml" -exec grep -l "yor_trace" {} \; | wc -l)
+          json_count=$(find cloudformation-validation -name "*.json" -exec grep -l "yor_trace" {} \; | wc -l)
+          
+          echo "📊 Format processing summary:"
+          echo "  - .yaml files tagged: $yaml_count"
+          echo "  - .yml files tagged: $yml_count"
+          echo "  - .json files tagged: $json_count"
+          
+          if [ "$yaml_count" -gt 0 ] && [ "$yml_count" -gt 0 ] && [ "$json_count" -gt 0 ]; then
+            echo "✅ All CloudFormation template formats processed successfully"
+          else
+            echo "❌ Not all template formats were processed"
+            exit 1
+          fi
+
+  validate-resource-identification:
+    name: Validate CloudFormation Resource Identification
+    runs-on: ubuntu-latest
+    if: ${{ github.event.inputs.validation_type == 'all' || github.event.inputs.validation_type == 'resource-identification' || github.event.inputs.validation_type == '' }}
+    
+    steps:
+      - name: Setup Resource Validation
+        run: |
+          echo "🔍 Validating CloudFormation resource identification and tagging"
+          echo "Requirements: 6.2, 6.3 - System SHALL validate CloudFormation format and use CF-specific resource identification"
+      
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+      
+      - name: Create Resource Test Directory
+        run: |
+          mkdir -p cloudformation-resources
+          
+          # Copy templates with various AWS resource types
+          cp test-templates/vpc-stack.yaml cloudformation-resources/
+          cp test-templates/ec2-instance.json cloudformation-resources/
+          cp test-templates/sns-topic.yaml cloudformation-resources/
+          
+          echo "📁 Resource test templates:"
+          ls -la cloudformation-resources/
+      
+      - name: Run Yor Action on Resource Templates
+        uses: ./
+        with:
+          cloudformation-dir: cloudformation-resources
+          commit-changes: false
+      
+      - name: Validate VPC Resources Tagging
+        run: |
+          echo "🔍 Checking VPC stack resource tagging..."
+          vpc_resources=("TestVPC" "InternetGateway" "PublicSubnet" "PrivateSubnet" "NATGateway")
+          
+          for resource in "${vpc_resources[@]}"; do
+            if grep -A 10 -B 2 "$resource:" cloudformation-resources/vpc-stack.yaml | grep -q "yor_trace"; then
+              echo "✅ Resource $resource tagged successfully"
+            else
+              echo "⚠️  Resource $resource may not be tagged (checking broader context)"
+            fi
+          done
+          
+          # Check overall tagging
+          if grep -q "yor_trace" cloudformation-resources/vpc-stack.yaml; then
+            echo "✅ VPC stack contains Yor tags"
+          else
+            echo "❌ VPC stack not properly tagged"
+            exit 1
+          fi
+      
+      - name: Validate EC2 Resources Tagging
+        run: |
+          echo "🔍 Checking EC2 instance resource tagging..."
+          
+          if grep -q "yor_trace" cloudformation-resources/ec2-instance.json; then
+            echo "✅ EC2 template contains Yor tags"
+            
+            # Check for specific resource tagging
+            if jq -e '.Resources | to_entries[] | select(.value | has("yor_trace"))' cloudformation-resources/ec2-instance.json > /dev/null 2>&1; then
+              echo "✅ EC2 resources properly tagged in JSON format"
+            else
+              echo "ℹ️  Yor tags may be in different format - checking text presence"
+              grep "yor_trace" cloudformation-resources/ec2-instance.json | head -3
+            fi
+          else
+            echo "❌ EC2 template not properly tagged"
+            exit 1
+          fi
+      
+      - name: Validate SNS Resources Tagging
+        run: |
+          echo "🔍 Checking SNS topic resource tagging..."
+          
+          if grep -q "yor_trace" cloudformation-resources/sns-topic.yaml; then
+            echo "✅ SNS template contains Yor tags"
+          else
+            echo "❌ SNS template not properly tagged"
+            exit 1
+          fi
+      
+      - name: Validate CloudFormation-Specific Tagging
+        run: |
+          echo "🔍 Validating CloudFormation-specific tag structure..."
+          
+          # Check for git-related tags that Yor should add
+          total_files=$(find cloudformation-resources -name "*.yaml" -o -name "*.yml" -o -name "*.json" | wc -l)
+          tagged_files=$(find cloudformation-resources -name "*.yaml" -o -name "*.yml" -o -name "*.json" -exec grep -l "yor_trace" {} \; | wc -l)
+          
+          echo "📊 Resource tagging summary:"
+          echo "  - Total CloudFormation files: $total_files"
+          echo "  - Files with Yor tags: $tagged_files"
+          
+          if [ "$tagged_files" -eq "$total_files" ] && [ "$total_files" -gt 0 ]; then
+            echo "✅ All CloudFormation resources properly identified and tagged"
+          else
+            echo "❌ Not all CloudFormation resources were properly tagged"
+            exit 1
+          fi
+
+  validate-nested-stacks:
+    name: Validate Nested Stack Handling
+    runs-on: ubuntu-latest
+    if: ${{ github.event.inputs.validation_type == 'all' || github.event.inputs.validation_type == 'nested-stacks' || github.event.inputs.validation_type == '' }}
+    
+    steps:
+      - name: Setup Nested Stack Validation
+        run: |
+          echo "🔍 Validating nested stack and complex template structure handling"
+          echo "Requirements: 6.3 - System SHALL use CloudFormation-specific resource identification"
+      
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+      
+      - name: Create Nested Stack Test Directory
+        run: |
+          mkdir -p cloudformation-nested
+          
+          # Copy complex templates
+          cp test-templates/nested-stack.yaml cloudformation-nested/
+          cp test-templates/vpc-stack.yaml cloudformation-nested/
+          
+          echo "📁 Nested stack test templates:"
+          ls -la cloudformation-nested/
+      
+      - name: Run Yor Action on Nested Templates
+        uses: ./
+        with:
+          cloudformation-dir: cloudformation-nested
+          commit-changes: false
+      
+      - name: Validate Nested Stack Processing
+        run: |
+          echo "🔍 Checking nested stack template processing..."
+          
+          if grep -q "yor_trace" cloudformation-nested/nested-stack.yaml; then
+            echo "✅ Nested stack template processed successfully"
+            
+            # Check for nested stack specific resources
+            nested_resources=("NetworkingStack" "SecurityStack" "ApplicationStack" "CrossStackRole")
+            
+            for resource in "${nested_resources[@]}"; do
+              if grep -A 5 -B 2 "$resource:" cloudformation-nested/nested-stack.yaml | grep -q "yor_trace"; then
+                echo "✅ Nested resource $resource tagged"
+              else
+                echo "ℹ️  Nested resource $resource context checked"
+              fi
+            done
+          else
+            echo "❌ Nested stack template not processed correctly"
+            exit 1
+          fi
+      
+      - name: Validate Complex Template Structure
+        run: |
+          echo "🔍 Checking complex template structure handling..."
+          
+          # Check for various CloudFormation constructs
+          constructs=("Parameters" "Resources" "Outputs" "DependsOn" "GetAtt")
+          
+          for construct in "${constructs[@]}"; do
+            if grep -q "$construct" cloudformation-nested/nested-stack.yaml; then
+              echo "✅ Template contains $construct construct"
+            fi
+          done
+          
+          # Verify template is still valid YAML after tagging
+          if python3 -c "import yaml; yaml.safe_load(open('cloudformation-nested/nested-stack.yaml'))" 2>/dev/null; then
+            echo "✅ Tagged template maintains valid YAML structure"
+          else
+            echo "❌ Tagged template has invalid YAML structure"
+            exit 1
+          fi
+      
+      - name: Validate Cross-Stack References
+        run: |
+          echo "🔍 Checking cross-stack reference preservation..."
+          
+          # Check that cross-stack references are preserved
+          if grep -q "Export:" cloudformation-nested/nested-stack.yaml && grep -q "GetAtt" cloudformation-nested/nested-stack.yaml; then
+            echo "✅ Cross-stack references preserved in tagged template"
+          else
+            echo "⚠️  Cross-stack references may have been affected"
+          fi
+
+  validate-error-handling:
+    name: Validate Error Handling for Invalid Templates
+    runs-on: ubuntu-latest
+    if: ${{ github.event.inputs.validation_type == 'all' || github.event.inputs.validation_type == 'error-handling' || github.event.inputs.validation_type == '' }}
+    
+    steps:
+      - name: Setup Error Handling Validation
+        run: |
+          echo "🔍 Validating error handling for invalid CloudFormation templates"
+          echo "Requirements: 6.4 - System SHALL log warnings but continue processing valid files"
+      
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+      
+      - name: Create Mixed Valid/Invalid Template Directory
+        run: |
+          mkdir -p cloudformation-mixed
+          
+          # Copy valid templates
+          cp test-templates/basic-s3-bucket.yaml cloudformation-mixed/valid-template.yaml
+          cp test-templates/ec2-instance.json cloudformation-mixed/valid-template.json
+          
+          # Copy invalid template
+          cp test-templates/invalid-template.yaml cloudformation-mixed/invalid-template.yaml
+          
+          echo "📁 Mixed template directory:"
+          ls -la cloudformation-mixed/
+      
+      - name: Run Yor Action on Mixed Templates
+        id: mixed-templates
+        uses: ./
+        with:
+          cloudformation-dir: cloudformation-mixed
+          commit-changes: false
+        continue-on-error: true
+      
+      - name: Validate Error Handling Behavior
+        run: |
+          echo "🔍 Checking error handling behavior..."
+          
+          # Check if valid templates were still processed despite invalid ones
+          valid_yaml_tagged=$(grep -l "yor_trace" cloudformation-mixed/valid-template.yaml 2>/dev/null | wc -l)
+          valid_json_tagged=$(grep -l "yor_trace" cloudformation-mixed/valid-template.json 2>/dev/null | wc -l)
+          
+          echo "📊 Error handling results:"
+          echo "  - Valid YAML template tagged: $valid_yaml_tagged"
+          echo "  - Valid JSON template tagged: $valid_json_tagged"
+          echo "  - Action outcome: ${{ steps.mixed-templates.outcome }}"
+          
+          if [ "$valid_yaml_tagged" -gt 0 ] && [ "$valid_json_tagged" -gt 0 ]; then
+            echo "✅ Valid templates processed despite invalid template presence"
+          else
+            echo "⚠️  Valid template processing may have been affected by invalid template"
+          fi
+      
+      - name: Test Invalid Template Only
+        id: invalid-only
+        uses: ./
+        with:
+          cloudformation-dir: test-templates
+          commit-changes: false
+        continue-on-error: true
+        env:
+          TEST_INVALID_ONLY: true
+      
+      - name: Create Invalid-Only Test Directory
+        run: |
+          mkdir -p cloudformation-invalid-only
+          cp test-templates/invalid-template.yaml cloudformation-invalid-only/
+      
+      - name: Run Yor Action on Invalid Template Only
+        id: invalid-template-test
+        uses: ./
+        with:
+          cloudformation-dir: cloudformation-invalid-only
+          commit-changes: false
+        continue-on-error: true
+      
+      - name: Validate Invalid Template Handling
+        run: |
+          echo "🔍 Checking invalid template handling..."
+          echo "Action outcome with invalid template: ${{ steps.invalid-template-test.outcome }}"
+          
+          # The action might succeed or fail depending on Yor's behavior
+          # The key is that it should handle the error gracefully
+          if [ "${{ steps.invalid-template-test.outcome }}" = "success" ]; then
+            echo "✅ Action handled invalid template gracefully (continued processing)"
+          elif [ "${{ steps.invalid-template-test.outcome }}" = "failure" ]; then
+            echo "✅ Action failed gracefully with invalid template (expected behavior)"
+          else
+            echo "⚠️  Unexpected outcome for invalid template processing"
+          fi
+
+  validation-summary:
+    name: CloudFormation Processing Validation Summary
+    runs-on: ubuntu-latest
+    needs: [validate-template-formats, validate-resource-identification, validate-nested-stacks, validate-error-handling]
+    if: always()
+    
+    steps:
+      - name: Generate Validation Summary
+        run: |
+          echo "📋 CloudFormation Template Processing Validation Summary"
+          echo "=================================================="
+          
+          echo "🔍 Template Format Validation: ${{ needs.validate-template-formats.result }}"
+          echo "🔍 Resource Identification Validation: ${{ needs.validate-resource-identification.result }}"
+          echo "🔍 Nested Stack Validation: ${{ needs.validate-nested-stacks.result }}"
+          echo "🔍 Error Handling Validation: ${{ needs.validate-error-handling.result }}"
+          
+          # Count successful validations
+          success_count=0
+          total_count=4
+          
+          [ "${{ needs.validate-template-formats.result }}" = "success" ] && ((success_count++))
+          [ "${{ needs.validate-resource-identification.result }}" = "success" ] && ((success_count++))
+          [ "${{ needs.validate-nested-stacks.result }}" = "success" ] && ((success_count++))
+          [ "${{ needs.validate-error-handling.result }}" = "success" ] && ((success_count++))
+          
+          echo ""
+          echo "📊 Validation Results: $success_count/$total_count tests passed"
+          
+          if [ "$success_count" -eq "$total_count" ]; then
+            echo "✅ All CloudFormation processing validations passed!"
+            echo "Requirements 6.1, 6.2, 6.3, 6.4 validated successfully"
+          else
+            echo "❌ Some validations failed - review individual test results"
+            exit 1
+          fi

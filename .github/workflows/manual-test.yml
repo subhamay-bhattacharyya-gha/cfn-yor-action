@@ -1,0 +1,72 @@
+name: Manual Test CloudFormation Yor Tagging
+
+on:
+  workflow_dispatch:
+    inputs:
+      cloudformation_dir:
+        description: 'CloudFormation directory to test'
+        required: false
+        default: 'cloudformation'
+        type: string
+      
+      commit_changes:
+        description: 'Commit the tagged files'
+        required: false
+        default: false
+        type: boolean
+      
+      release_tag:
+        description: 'Release tag to checkout (optional)'
+        required: false
+        default: ''
+        type: string
+
+jobs:
+  manual-test:
+    name: Manual Test Action
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Display Test Configuration
+        run: |
+          echo "Manual test configuration:"
+          echo "  CloudFormation directory: ${{ github.event.inputs.cloudformation_dir }}"
+          echo "  Commit changes: ${{ github.event.inputs.commit_changes }}"
+          echo "  Release tag: ${{ github.event.inputs.release_tag || 'latest commit' }}"
+      
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Fetch all history for potential tag checkout
+      
+      - name: Setup Test CloudFormation Templates
+        run: |
+          mkdir -p ${{ github.event.inputs.cloudformation_dir }}
+          
+          # Copy a variety of test templates
+          cp test-templates/basic-s3-bucket.yaml ${{ github.event.inputs.cloudformation_dir }}/
+          cp test-templates/ec2-instance.json ${{ github.event.inputs.cloudformation_dir }}/
+          cp test-templates/lambda-function.yaml ${{ github.event.inputs.cloudformation_dir }}/
+          
+          echo "Test templates copied to ${{ github.event.inputs.cloudformation_dir }}:"
+          ls -la ${{ github.event.inputs.cloudformation_dir }}/
+      
+      - name: Run CloudFormation Yor Tagging Action
+        uses: ./
+        with:
+          cloudformation-dir: ${{ github.event.inputs.cloudformation_dir }}
+          commit-changes: ${{ github.event.inputs.commit_changes }}
+          release-tag: ${{ github.event.inputs.release_tag }}
+      
+      - name: Display Results
+        run: |
+          echo "Action completed. Checking for Yor tags in templates..."
+          
+          if find ${{ github.event.inputs.cloudformation_dir }} -name "*.yaml" -o -name "*.yml" -o -name "*.json" | xargs grep -l "yor_trace" 2>/dev/null; then
+            echo "✅ Yor tags found in CloudFormation templates"
+          else
+            echo "❌ No Yor tags found in CloudFormation templates"
+          fi
+          
+          echo "Git status after action:"
+          git status --porcelain || echo "No git changes detected"

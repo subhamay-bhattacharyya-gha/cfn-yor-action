@@ -1,0 +1,154 @@
+{
+  "AWSTemplateFormatVersion": "2010-09-09",
+  "Description": "API Gateway for testing no-commit scenario",
+  "Parameters": {
+    "ApiName": {
+      "Type": "String",
+      "Default": "test-api",
+      "Description": "Name of the API Gateway"
+    },
+    "StageName": {
+      "Type": "String",
+      "Default": "dev",
+      "Description": "Name of the deployment stage"
+    }
+  },
+  "Resources": {
+    "TestRestApi": {
+      "Type": "AWS::ApiGateway::RestApi",
+      "Properties": {
+        "Name": {
+          "Ref": "ApiName"
+        },
+        "Description": "Test REST API for Yor tagging",
+        "EndpointConfiguration": {
+          "Types": ["REGIONAL"]
+        },
+        "Tags": [
+          {
+            "Key": "Name",
+            "Value": "TestRestApi"
+          }
+        ]
+      }
+    },
+    "TestResource": {
+      "Type": "AWS::ApiGateway::Resource",
+      "Properties": {
+        "RestApiId": {
+          "Ref": "TestRestApi"
+        },
+        "ParentId": {
+          "Fn::GetAtt": ["TestRestApi", "RootResourceId"]
+        },
+        "PathPart": "test"
+      }
+    },
+    "TestMethod": {
+      "Type": "AWS::ApiGateway::Method",
+      "Properties": {
+        "RestApiId": {
+          "Ref": "TestRestApi"
+        },
+        "ResourceId": {
+          "Ref": "TestResource"
+        },
+        "HttpMethod": "GET",
+        "AuthorizationType": "NONE",
+        "Integration": {
+          "Type": "MOCK",
+          "IntegrationResponses": [
+            {
+              "StatusCode": "200",
+              "ResponseTemplates": {
+                "application/json": "{\"message\": \"Hello from test API!\"}"
+              }
+            }
+          ],
+          "RequestTemplates": {
+            "application/json": "{\"statusCode\": 200}"
+          }
+        },
+        "MethodResponses": [
+          {
+            "StatusCode": "200",
+            "ResponseModels": {
+              "application/json": "Empty"
+            }
+          }
+        ]
+      }
+    },
+    "TestDeployment": {
+      "Type": "AWS::ApiGateway::Deployment",
+      "DependsOn": "TestMethod",
+      "Properties": {
+        "RestApiId": {
+          "Ref": "TestRestApi"
+        },
+        "StageName": {
+          "Ref": "StageName"
+        },
+        "StageDescription": "Test deployment stage"
+      }
+    },
+    "ApiGatewayAccount": {
+      "Type": "AWS::ApiGateway::Account",
+      "Properties": {
+        "CloudWatchRoleArn": {
+          "Fn::GetAtt": ["ApiGatewayCloudWatchRole", "Arn"]
+        }
+      }
+    },
+    "ApiGatewayCloudWatchRole": {
+      "Type": "AWS::IAM::Role",
+      "Properties": {
+        "AssumeRolePolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Effect": "Allow",
+              "Principal": {
+                "Service": "apigateway.amazonaws.com"
+              },
+              "Action": "sts:AssumeRole"
+            }
+          ]
+        },
+        "ManagedPolicyArns": [
+          "arn:aws:iam::aws:policy/service-role/AmazonAPIGatewayPushToCloudWatchLogs"
+        ],
+        "Tags": [
+          {
+            "Key": "Name",
+            "Value": "ApiGatewayCloudWatchRole"
+          }
+        ]
+      }
+    }
+  },
+  "Outputs": {
+    "ApiId": {
+      "Description": "ID of the API Gateway",
+      "Value": {
+        "Ref": "TestRestApi"
+      },
+      "Export": {
+        "Name": {
+          "Fn::Sub": "${AWS::StackName}-ApiId"
+        }
+      }
+    },
+    "ApiUrl": {
+      "Description": "URL of the API Gateway",
+      "Value": {
+        "Fn::Sub": "https://${TestRestApi}.execute-api.${AWS::Region}.amazonaws.com/${StageName}/test"
+      },
+      "Export": {
+        "Name": {
+          "Fn::Sub": "${AWS::StackName}-ApiUrl"
+        }
+      }
+    }
+  }
+}

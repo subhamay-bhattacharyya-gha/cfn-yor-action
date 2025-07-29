@@ -1,44 +1,241 @@
-name: 'Action Name'
-description: 'Action Description'
+name: 'CloudFormation Yor Tagging'
+description: 'Automatically apply Yor Git metadata tags to CloudFormation templates for better infrastructure traceability and governance'
+author: 'Subhamay Bhattacharyya'
+
+branding:
+  icon: 'tag'
+  color: 'orange'
 
 inputs:
-  input-1:
-    description: Input description.
+  cloudformation-dir:
+    description: 'Relative path to the directory containing CloudFormation templates (.yaml, .yml, .json files). The path is resolved relative to the workspace root.'
     required: false
-    default: default-value
-  input-2:
-    description: Input description.
+    default: 'cloudformation'
+  release-tag:
+    description: 'Specific Git release tag to checkout before processing templates. If not provided, uses the latest commit on the default branch.'
     required: false
-    default: default-value
-  input-3:
-    description: Input description.
+    default: ''
+  commit-changes:
+    description: 'Whether to automatically commit the Yor-tagged CloudFormation templates back to the repository. Set to "false" to only apply tags without committing.'
     required: false
-    default: default-value
+    default: 'true'
   github-token:
-    description: 'GitHub token'
-    required: true
+    description: 'GitHub token for authenticated API requests to avoid rate limiting. Uses the default GitHub Actions token if not specified.'
+    required: false
+    default: ${{ github.token }}
 
 runs:
   using: 'composite'
   steps:
-    - name: Set up Python
-      uses: actions/setup-python@v5
-      with:
-        python-version: 3.x
-
-    - name: Sample step to call GitHub API
+    - name: Validate Inputs
       shell: bash
-      env:
-        GITHUB_TOKEN: ${{ inputs.github-token }}
       run: |
-        ISSUE_NUMBER="${{ github.event.issue.number }}"
-        REPO="${{ github.repository }}"
-        OWNER=$(echo $REPO | cut -d'/' -f1)
-        BRANCH_NAME="${{ steps.create-branch.outputs.branch-name }}"
-        COMMENT_BODY="Branch [$BRANCH_NAME](https://github.com/$OWNER/$REPO/tree/$BRANCH_NAME) created 🚀"
+        echo "::group::Validating input parameters"
+        
+        # Validate commit-changes input (should be 'true' or 'false')
+        if [[ "${{ inputs.commit-changes }}" != "true" && "${{ inputs.commit-changes }}" != "false" ]]; then
+          echo "::error::Invalid value for commit-changes: '${{ inputs.commit-changes }}'. Must be 'true' or 'false'."
+          exit 1
+        fi
+        
+        # Validate cloudformation-dir input (should not be empty and should be a valid path format)
+        if [[ -z "${{ inputs.cloudformation-dir }}" ]]; then
+          echo "::error::CloudFormation directory cannot be empty."
+          exit 1
+        fi
+        
+        # Check for invalid path characters
+        if [[ "${{ inputs.cloudformation-dir }}" =~ [[:space:]]$ ]] || [[ "${{ inputs.cloudformation-dir }}" =~ ^[[:space:]] ]]; then
+          echo "::error::CloudFormation directory path cannot start or end with whitespace: '${{ inputs.cloudformation-dir }}'"
+          exit 1
+        fi
+        
+        # Validate release-tag format if provided (basic Git tag validation)
+        if [[ -n "${{ inputs.release-tag }}" ]]; then
+          if [[ "${{ inputs.release-tag }}" =~ [[:space:]] ]]; then
+            echo "::error::Release tag cannot contain whitespace: '${{ inputs.release-tag }}'"
+            exit 1
+          fi
+          if [[ "${{ inputs.release-tag }}" =~ ^- ]] || [[ "${{ inputs.release-tag }}" =~ -$ ]]; then
+            echo "::error::Release tag cannot start or end with hyphen: '${{ inputs.release-tag }}'"
+            exit 1
+          fi
+        fi
+        
+        echo "✅ Input validation passed"
+        echo "  - CloudFormation directory: ${{ inputs.cloudformation-dir }}"
+        echo "  - Release tag: ${{ inputs.release-tag || 'latest commit' }}"
+        echo "  - Commit changes: ${{ inputs.commit-changes }}"
+        echo "::endgroup::"
 
-        curl -s -X POST \
-          -H "Authorization: token $GITHUB_TOKEN" \
-          -H "Content-Type: application/json" \
-          -d "{\"body\": \"$COMMENT_BODY\"}" \
-          https://api.github.com/repos/$REPO/issues/$ISSUE_NUMBER/comments
+    - name: Checkout Repository
+      id: checkout
+      uses: actions/checkout@v4
+      with:
+        ref: ${{ inputs.release-tag }}
+        token: ${{ inputs.github-token }}
+      continue-on-error: true
+
+    - name: Handle Checkout Results
+      shell: bash
+      run: |
+        echo "::group::Processing checkout results"
+        
+        if [[ "${{ steps.checkout.outcome }}" == "failure" ]]; then
+          if [[ -n "${{ inputs.release-tag }}" ]]; then
+            echo "::error::Failed to checkout release tag: '${{ inputs.release-tag }}'"
+            echo "::error::This could be due to:"
+            echo "::error::  - Release tag does not exist"
+            echo "::error::  - Insufficient permissions to access the tag"
+            echo "::error::  - Invalid GitHub token"
+            echo "::error::Available tags:"
+            git tag -l | head -10 || echo "Unable to list tags"
+          else
+            echo "::error::Failed to checkout repository"
+            echo "::error::This could be due to:"
+            echo "::error::  - Repository access issues"
+            echo "::error::  - Invalid GitHub token"
+            echo "::error::  - Network connectivity problems"
+          fi
+          exit 1
+        else
+          if [[ -n "${{ inputs.release-tag }}" ]]; then
+            echo "✅ Successfully checked out release tag: ${{ inputs.release-tag }}"
+          else
+            echo "✅ Successfully checked out latest commit"
+          fi
+        fi
+        
+        echo "::endgroup::"
+
+    - name: Validate CloudFormation Directory
+      shell: bash
+      run: |
+        echo "::group::Validating CloudFormation directory"
+        
+        CF_DIR="${{ inputs.cloudformation-dir }}"
+        
+        # Check if directory exists
+        if [[ ! -d "$CF_DIR" ]]; then
+          echo "::error::CloudFormation directory does not exist: '$CF_DIR'"
+          echo "::error::Please ensure the directory exists or specify a different path using the 'cloudformation-dir' input."
+          echo "Available directories in workspace root:"
+          ls -la | grep "^d" || echo "No directories found"
+          exit 1
+        fi
+        
+        # Check if directory is readable
+        if [[ ! -r "$CF_DIR" ]]; then
+          echo "::error::CloudFormation directory is not readable: '$CF_DIR'"
+          echo "::error::Please check directory permissions."
+          exit 1
+        fi
+        
+        # Check for CloudFormation template files
+        CF_FILES=$(find "$CF_DIR" -type f \( -name "*.yaml" -o -name "*.yml" -o -name "*.json" \) 2>/dev/null | wc -l)
+        
+        if [[ $CF_FILES -eq 0 ]]; then
+          echo "::warning::No CloudFormation template files found in directory: '$CF_DIR'"
+          echo "::warning::Looking for files with extensions: .yaml, .yml, .json"
+          echo "Directory contents:"
+          ls -la "$CF_DIR" 2>/dev/null || echo "Unable to list directory contents"
+        else
+          echo "✅ Found $CF_FILES CloudFormation template file(s) in '$CF_DIR'"
+        fi
+        
+        echo "::endgroup::"
+
+    - name: Run Yor Action for CloudFormation
+      id: yor-action
+      uses: bridgecrewio/yor-action@main
+      with:
+        directory: ${{ inputs.cloudformation-dir }}
+        tag_groups: git
+        output_format: json
+      env:
+        LOG_LEVEL: DEBUG
+        GITHUB_TOKEN: ${{ inputs.github-token }}
+      continue-on-error: true
+
+    - name: Handle Yor Action Results
+      shell: bash
+      run: |
+        echo "::group::Processing Yor action results"
+        
+        if [[ "${{ steps.yor-action.outcome }}" == "failure" ]]; then
+          echo "::error::Yor action failed to process CloudFormation templates"
+          echo "::error::This could be due to:"
+          echo "::error::  - Invalid CloudFormation template syntax"
+          echo "::error::  - Insufficient permissions to modify files"
+          echo "::error::  - Network issues accessing GitHub API"
+          echo "::error::  - Missing or invalid GitHub token"
+          echo "::error::Please check the logs above for specific error details."
+          exit 1
+        elif [[ "${{ steps.yor-action.outcome }}" == "success" ]]; then
+          echo "✅ Yor successfully processed CloudFormation templates in '${{ inputs.cloudformation-dir }}'"
+        else
+          echo "::warning::Yor action completed with unexpected outcome: ${{ steps.yor-action.outcome }}"
+        fi
+        
+        echo "::endgroup::"
+
+    - name: Commit Changes
+      if: ${{ inputs.commit-changes == 'true' }}
+      id: commit-changes
+      uses: stefanzweifel/git-auto-commit-action@v6
+      with:
+        commit_message: 'Apply Yor Git metadata tags to CloudFormation templates'
+        file_pattern: '${{ inputs.cloudformation-dir }}/**/*'
+        commit_user_name: 'github-actions[bot]'
+        commit_user_email: 'github-actions[bot]@users.noreply.github.com'
+        commit_author: 'github-actions[bot] <github-actions[bot]@users.noreply.github.com>'
+      continue-on-error: true
+
+    - name: Handle Commit Results
+      if: ${{ inputs.commit-changes == 'true' }}
+      shell: bash
+      run: |
+        echo "::group::Processing commit results"
+        
+        if [[ "${{ steps.commit-changes.outcome }}" == "failure" ]]; then
+          echo "::error::Failed to commit Yor-tagged CloudFormation templates"
+          echo "::error::This could be due to:"
+          echo "::error::  - Insufficient repository permissions"
+          echo "::error::  - Branch protection rules preventing commits"
+          echo "::error::  - No changes to commit (files already tagged)"
+          echo "::error::  - Invalid GitHub token permissions"
+          echo "::error::Please check the logs above for specific error details."
+          exit 1
+        elif [[ "${{ steps.commit-changes.outcome }}" == "success" ]]; then
+          if [[ "${{ steps.commit-changes.outputs.changes_detected }}" == "true" ]]; then
+            echo "✅ Successfully committed Yor-tagged CloudFormation templates"
+            echo "Commit SHA: ${{ steps.commit-changes.outputs.commit_hash }}"
+          else
+            echo "ℹ️ No changes detected - CloudFormation templates were already properly tagged"
+          fi
+        else
+          echo "::warning::Commit step completed with unexpected outcome: ${{ steps.commit-changes.outcome }}"
+        fi
+        
+        echo "::endgroup::"
+
+    - name: Action Summary
+      shell: bash
+      run: |
+        echo "::group::CloudFormation Yor Tagging Action Summary"
+        echo "✅ Action completed successfully"
+        echo "Configuration used:"
+        echo "  - CloudFormation directory: ${{ inputs.cloudformation-dir }}"
+        echo "  - Release tag: ${{ inputs.release-tag || 'latest commit' }}"
+        echo "  - Commit changes: ${{ inputs.commit-changes }}"
+        
+        if [[ "${{ inputs.commit-changes }}" == "true" ]]; then
+          if [[ "${{ steps.commit-changes.outputs.changes_detected }}" == "true" ]]; then
+            echo "  - Changes committed: Yes (SHA: ${{ steps.commit-changes.outputs.commit_hash }})"
+          else
+            echo "  - Changes committed: No changes detected"
+          fi
+        else
+          echo "  - Changes committed: Skipped (commit-changes=false)"
+        fi
+        echo "::endgroup::"
