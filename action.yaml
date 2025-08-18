@@ -70,7 +70,7 @@ runs:
 
     - name: Checkout Repository
       id: checkout
-      uses: actions/checkout@v4
+      uses: actions/checkout@v5
       with:
         ref: ${{ inputs.release-tag }}
         token: ${{ inputs.github-token }}

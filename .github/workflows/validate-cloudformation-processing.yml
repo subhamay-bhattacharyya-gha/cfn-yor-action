@@ -28,7 +28,7 @@ jobs:
           echo "Requirements: 6.1 - System SHALL identify CloudFormation templates by file extensions"
       
       - name: Checkout Repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
       
       - name: Create Test Templates Directory
         run: |
@@ -114,7 +114,7 @@ jobs:
           echo "Requirements: 6.2, 6.3 - System SHALL validate CloudFormation format and use CF-specific resource identification"
       
       - name: Checkout Repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
       
       - name: Create Resource Test Directory
         run: |
@@ -216,7 +216,7 @@ jobs:
           echo "Requirements: 6.3 - System SHALL use CloudFormation-specific resource identification"
       
       - name: Checkout Repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
       
       - name: Create Nested Stack Test Directory
         run: |
@@ -301,7 +301,7 @@ jobs:
           echo "Requirements: 6.4 - System SHALL log warnings but continue processing valid files"
       
       - name: Checkout Repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
       
       - name: Create Mixed Valid/Invalid Template Directory
         run: |
