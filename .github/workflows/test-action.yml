@@ -32,7 +32,7 @@ jobs:
           echo "This test validates requirements: 1.1, 1.2, 1.3, 2.2"
       
       - name: Checkout Test Repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
       
       - name: Create Default CloudFormation Directory
         run: |
@@ -68,7 +68,7 @@ jobs:
           echo "This test validates requirements: 2.1, 2.3"
       
       - name: Checkout Test Repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
       
       - name: Create Custom CloudFormation Directory
         run: |
@@ -105,7 +105,7 @@ jobs:
           echo "This test validates requirements: 4.1, 4.2"
       
       - name: Checkout Test Repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
       
       - name: Create CloudFormation Templates
         run: |
@@ -148,7 +148,7 @@ jobs:
           echo "This test validates requirements: 4.1, 4.3"
       
       - name: Checkout Test Repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
       
@@ -193,7 +193,7 @@ jobs:
           echo "This test validates requirements: 3.1, 3.2, 3.3"
       
       - name: Checkout Test Repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           fetch-depth: 0  # Fetch all history for tags
       
@@ -242,7 +242,7 @@ jobs:
           echo "This test validates requirements: 2.4, 3.4"
       
       - name: Checkout Test Repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
       
       - name: Test Invalid Directory
         continue-on-error: true
@@ -290,7 +290,7 @@ jobs:
           echo "This test validates requirements: 1.1, 1.2"
       
       - name: Checkout Test Repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
       
       - name: Create Mixed Format Templates
         run: |
