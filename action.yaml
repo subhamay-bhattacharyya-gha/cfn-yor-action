@@ -70,7 +70,7 @@ runs:
 
     - name: Checkout Repository
       id: checkout
-      uses: actions/checkout@v4
+      uses: actions/checkout@v6
       with:
         ref: ${{ inputs.release-tag }}
         token: ${{ inputs.github-token }}
@@ -182,7 +182,7 @@ runs:
     - name: Commit Changes
       if: ${{ inputs.commit-changes == 'true' }}
       id: commit-changes
-      uses: stefanzweifel/git-auto-commit-action@v6
+      uses: stefanzweifel/git-auto-commit-action@v7
       with:
         commit_message: 'Apply Yor Git metadata tags to CloudFormation templates'
         file_pattern: '${{ inputs.cloudformation-dir }}/**/*'
